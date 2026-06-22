@@ -1,0 +1,83 @@
+import asyncio
+from aiogram import Bot, Dispatcher, Router, F
+from aiogram.types import Message, LabeledPrice, PreCheckoutQuery
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+import json
+
+BOT_TOKEN = "8942330106:AAEn_HHynd-l0XIgHvNTnAs_7q7VQ_YNu_0"
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+router = Router()
+dp.include_router(router)
+
+# Цены в звёздах (указываются в XTR — 1 XTR = 1 звезда)
+PRODUCTS = {
+    "meow": {"title": "Мяу", "description": "1 грамм — премиум качество", "price": 888},
+    "green": {"title": "Зелёная вкусняшка", "description": "1 грамм — свежий урожай", "price": 676},
+    "pine": {"title": "Шишка-вкусняшка", "description": "Порция — хит продаж", "price": 777}
+}
+
+@router.message(Command("start"))
+async def cmd_start(message: Message):
+    await message.answer(
+        "🥛 Добро пожаловать в Сливки Шоп!\n\n"
+        "Нажми кнопку ниже чтобы открыть магазин:",
+        reply_markup={
+            "inline_keyboard": [[{
+                "text": "🛒 Открыть магазин",
+                "web_app": {"url": "333angel777planet-a11y.github.io"}
+            }]]
+        }
+    )
+
+@router.message(F.web_app_data)
+async def handle_web_app(message: Message):
+    try:
+        data = json.loads(message.web_app_data.data)
+        
+        if data.get("action") == "create_invoice":
+            product_key = data.get("product")
+            stars = data.get("stars")
+            
+            if product_key not in PRODUCTS:
+                await message.answer("❌ Товар не найден")
+                return
+            
+            product = PRODUCTS[product_key]
+            
+            await bot.send_invoice(
+                chat_id=message.chat.id,
+                title=product["title"],
+                description=product["description"],
+                payload=json.dumps({"product": product_key, "user_id": message.from_user.id}),
+                currency="XTR",  # Telegram Stars
+                prices=[LabeledPrice(label=product["title"], amount=stars)],
+                provider_token=""  # Пустое для Stars
+            )
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {e}")
+
+@router.pre_checkout_query()
+async def pre_checkout(pre_checkout: PreCheckoutQuery):
+    # Проверка перед оплатой (можно добавить логику)
+    await pre_checkout.answer(ok=True)
+
+@router.message(F.successful_payment)
+async def successful_payment(message: Message):
+    payment = message.successful_payment
+    data = json.loads(payment.invoice_payload)
+    product = PRODUCTS[data["product"]]
+    
+    await message.answer(
+        f"✅ Оплата получена!\n\n"
+        f"📦 Товар: {product['title']}\n"
+        f"⭐ Сумма: {payment.total_amount} звёзд\n\n"
+        f"Менеджер свяжется с тобой в ближайшее время."
+    )
+
+async def main():
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
